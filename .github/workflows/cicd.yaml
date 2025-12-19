@@ -87,8 +87,11 @@ jobs:
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
           IMAGE_TAG=${GITHUB_SHA::7}
-          docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} -p ${{ secrets.TOKEN }}
-          docker pull ghcr.io/${{ github.repository }}/$IMAGE_NAME:$IMAGE_TAG
+          IMAGE="ghcr.io/${{ github.repository }}/deepfake-api:$IMAGE_TAG"
+
+          docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} -p ${{ secrets.GITHUB_TOKEN }}
+
+          docker pull $IMAGE
 
           docker stop deepfake-api || true
           docker rm deepfake-api || true
@@ -97,7 +100,7 @@ jobs:
             --name deepfake-api \
             -p 8000:8000 \
             --restart always \
-            ghcr.io/${{ github.repository }}/$IMAGE_NAME:$IMAGE_TAG
+            $IMAGE
 
           sleep 5
           curl --fail http://localhost:8000/health
