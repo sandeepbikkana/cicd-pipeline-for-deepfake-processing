@@ -41,7 +41,7 @@ jobs:
 
     - name: Build Docker image
       run: |
-        IMAGE_TAG=${GITHUB_SHA::7}
+        IMAGE_TAG=${GITHUB_SHA}
         docker build -t $IMAGE_NAME:$IMAGE_TAG .
 
     - name: Smoke test container
@@ -72,7 +72,7 @@ jobs:
 
     - name: Build & Push Docker image to GHCR
       run: |
-        IMAGE_TAG=${GITHUB_SHA::7}
+        IMAGE_TAG=${GITHUB_SHA}
         docker build -t $REGISTRY/${{ github.repository }}/$IMAGE_NAME:$IMAGE_TAG .
         docker tag $REGISTRY/${{ github.repository }}/$IMAGE_NAME:$IMAGE_TAG \
                    $REGISTRY/${{ github.repository }}/$IMAGE_NAME:latest
