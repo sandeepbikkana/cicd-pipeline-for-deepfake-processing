@@ -2,7 +2,7 @@ name: CI-CD Deepfake Processing Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
 
 env:
@@ -17,39 +17,40 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout source code
-      uses: actions/checkout@v4
+      - name: Checkout source code
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
 
-    - name: Install dependencies
-      run: |
-        pip install -r app/requirements.txt
-        pip install pytest black flake8
+      - name: Install dependencies
+        run: |
+          pip install -r app/requirements.txt
+          pip install pytest black flake8 pytest-cov
 
-    - name: Code formatting check (Black)
-      run: black --check app/
+      - name: Code formatting check (Black)
+        run: black --check app/
 
-    - name: Linting (Flake8)
-      run: flake8 app/
+      - name: Linting (Flake8)
+        run: flake8 app/
 
-    - name: Run unit tests
-      run: pytest tests/
+      - name: Run unit tests
+        run: |
+          export PYTHONPATH=$PWD
+          pytest tests/ --cov=app --cov-report=term
 
-    - name: Build Docker image
-      run: |
-        IMAGE_TAG=${GITHUB_SHA}
-        docker build -t $IMAGE_NAME:$IMAGE_TAG .
+      - name: Build Docker image
+        run: |
+          docker build -t $IMAGE_NAME:${GITHUB_SHA} .
 
-    - name: Smoke test container
-      run: |
-        IMAGE_TAG=${GITHUB_SHA::7}
-        docker run -d -p 8000:8000 $IMAGE_NAME:$IMAGE_TAG
-        sleep 5
-        curl --fail http://localhost:8000/health
+      - name: Smoke test container
+        run: |
+          docker run -d -p 8000:8000 $IMAGE_NAME:${GITHUB_SHA}
+          sleep 5
+          curl --fail http://localhost:8000/health
+          docker stop $(docker ps -q)
 
 # =========================
 # CD JOB
@@ -60,47 +61,46 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-    - name: Checkout source code
-      uses: actions/checkout@v4
+      - name: Checkout source code
+        uses: actions/checkout@v4
 
-    - name: Login to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ secrets.GHCR_USERNAME }}
-        password: ${{ secrets.TOKEN }}
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Build & Push Docker image to GHCR
-      run: |
-        IMAGE_TAG=${GITHUB_SHA}
-        docker build -t $REGISTRY/${{ github.repository }}/$IMAGE_NAME:$IMAGE_TAG .
-        docker tag $REGISTRY/${{ github.repository }}/$IMAGE_NAME:$IMAGE_TAG \
-                   $REGISTRY/${{ github.repository }}/$IMAGE_NAME:latest
-        docker push $REGISTRY/${{ github.repository }}/$IMAGE_NAME:$IMAGE_TAG
-        docker push $REGISTRY/${{ github.repository }}/$IMAGE_NAME:latest
+      - name: Build & Push Docker image to GHCR
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}/$IMAGE_NAME:${GITHUB_SHA}"
 
-    - name: Deploy to AWS EC2
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USER }}
-        key: ${{ secrets.EC2_SSH_KEY }}
-        script: |
-          IMAGE_TAG=${GITHUB_SHA}
-          IMAGE="ghcr.io/${{ github.repository }}/deepfake-api:$IMAGE_TAG"
+          docker build -t $IMAGE .
+          docker tag $IMAGE ghcr.io/${{ github.repository }}/$IMAGE_NAME:latest
 
-          docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} -p ${{ secrets.GITHUB_TOKEN }}
+          docker push $IMAGE
+          docker push ghcr.io/${{ github.repository }}/$IMAGE_NAME:latest
 
-          docker pull $IMAGE
+      - name: Deploy to AWS EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            IMAGE="ghcr.io/${{ github.repository }}/deepfake-api:${GITHUB_SHA}"
 
-          # docker stop deepfake-api || true
-          # docker rm deepfake-api || true
+            docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} -p ${{ secrets.GITHUB_TOKEN }}
+            docker pull $IMAGE
 
-          docker run -d \
-            --name deepfake-api:$IMAGE_TAG \
-            -p 8000:8000 \
-            --restart always \
-            $IMAGE
+            docker stop deepfake-api || true
+            docker rm deepfake-api || true
 
-          sleep 5
-          curl --fail http://localhost:8000/health
+            docker run -d \
+              --name deepfake-api \
+              -p 8000:8000 \
+              --restart always \
+              $IMAGE
+
+            sleep 5
+            curl --fail http://localhost:8000/health
